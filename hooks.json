@@ -1,5 +1,12 @@
 {
   "context-monitor-timing": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "./hooks/run-hook.sh start",
+        "timeout": 5
+      }
+    ],
     "PreInvocation": [
       {
         "type": "command",

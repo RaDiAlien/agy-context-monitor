@@ -309,7 +309,86 @@ test('CHECKPOINT parsing calibrates effective ceiling and handles pre/post compa
     assert.equal(afterMetrics.context.usedTokens, 20768);
     assert.equal(afterMetrics.model.capacitySource, 'checkpoint-calibrated');
     assert.equal(afterMetrics.model.capacityTokens, 262_144);
+    // Post-CHECKPOINT cache drop must NOT be flagged as an unexpected cache bust!
+    assert.equal(afterMetrics.steps[afterMetrics.steps.length - 1].cacheBust, false);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test('cache bust detector flags TTL expiry and model-switch drops while estimating prompt cache USD savings', () => {
+  const baseMs = Date.parse('2026-11-15T10:00:00Z');
+  const steps = [
+    {
+      stepIndex: 1,
+      type: 'PLANNER_RESPONSE',
+      source: 'MODEL',
+      status: 'DONE',
+      createdAt: new Date(baseMs).toISOString(),
+      createdAtMs: baseMs,
+      inputTokens: 4_000,
+      cacheReadTokens: 76_000,
+      outputTokens: 800,
+      toolCount: 0,
+      inferredModel: 'Orchestrator (Carbon)',
+    },
+    // +10 minutes idle -> cacheRead drops to 0 and full 81K prompt is re-billed uncached -> ttl-expired
+    {
+      stepIndex: 2,
+      type: 'PLANNER_RESPONSE',
+      source: 'MODEL',
+      status: 'DONE',
+      createdAt: new Date(baseMs + 10 * 60 * 1000).toISOString(),
+      createdAtMs: baseMs + 10 * 60 * 1000,
+      inputTokens: 81_000,
+      cacheReadTokens: 0,
+      outputTokens: 900,
+      toolCount: 0,
+      inferredModel: 'Orchestrator (Carbon)',
+    },
+    // Warm again
+    {
+      stepIndex: 3,
+      type: 'PLANNER_RESPONSE',
+      source: 'MODEL',
+      status: 'DONE',
+      createdAt: new Date(baseMs + 11 * 60 * 1000).toISOString(),
+      createdAtMs: baseMs + 11 * 60 * 1000,
+      inputTokens: 2_000,
+      cacheReadTokens: 82_000,
+      outputTokens: 700,
+      toolCount: 0,
+      inferredModel: 'Orchestrator (Carbon)',
+    },
+    // Model switch to Claude -> cacheRead drops to 0 -> model-switch
+    {
+      stepIndex: 4,
+      type: 'PLANNER_RESPONSE',
+      source: 'MODEL',
+      status: 'DONE',
+      createdAt: new Date(baseMs + 12 * 60 * 1000).toISOString(),
+      createdAtMs: baseMs + 12 * 60 * 1000,
+      inputTokens: 85_000,
+      cacheReadTokens: 0,
+      outputTokens: 600,
+      toolCount: 0,
+      inferredModel: 'Claude Sonnet 5.5 (High)',
+    },
+  ];
+
+  const metrics = computeConversationMetrics({
+    conversationId: '99999999-8888-4777-8666-555555555555',
+    transcript: { exists: true, steps, transitions: [], checkpoints: [] },
+    timings: { exists: false, windows: [] },
+  });
+
+  assert.equal(metrics.sessionTotals.cacheBustCount, 2);
+  assert.equal(metrics.steps[1].cacheBust, true);
+  assert.equal(metrics.steps[1].cacheBustReason, 'ttl-expired');
+  assert.equal(metrics.steps[2].cacheBust, false);
+  assert.equal(metrics.steps[3].cacheBust, true);
+  assert.equal(metrics.steps[3].cacheBustReason, 'model-switch');
+  assert.equal(metrics.context.lastStepCacheBust, 'model-switch');
+  assert.ok(metrics.sessionTotals.cost.estimatedCostUsd > 0);
+  assert.ok(metrics.sessionTotals.cost.cacheSavedUsd > 0);
 });

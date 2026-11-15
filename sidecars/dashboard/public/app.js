@@ -4,6 +4,7 @@
       title: '上下文与速率',
       refresh: '刷新',
       followCurrent: '回到当前',
+      jumpConv: '↗ 跳转',
       tabLive: '实时',
       tabSteps: '步骤',
       tabHistory: '30天统计',
@@ -30,6 +31,11 @@
       windowNote: '只对 {model} 生效；选“自动”恢复按宿主窗口和压缩实测判断。',
       windowNoteUnknown: '模型未识别：设置会对所有未识别模型生效。',
       autoPreset: '自动',
+      chatHintsLabel: '会话内提示（0 模型 Token）：',
+      pillToggleOn: '💬 新会话入口 · 开',
+      pillToggleOff: '💬 新会话入口 · 关',
+      alertToggleOn: '🔔 85% 预警 · 开',
+      alertToggleOff: '🔔 85% 预警 · 关',
       observedTps: '生成速率',
       recentHint: '近 5 个有效步的加权平均',
       latestTps: '最新一步',
@@ -41,21 +47,27 @@
       outputTokens: '输出',
       cacheReads: '缓存读取',
       plannerSteps: '模型调用',
+      subagentsTotal: '子代理汇总',
+      estApiCost: '等效 API',
       tpsTrend: '速率趋势（最近有效步）',
       stepBreakdown: '每次模型调用',
-      stepsHint: '一次模型调用 = 模型生成一次回复（含一轮工具调用）。🔧 表示该步调用了工具。',
+      stepsHint: '一次模型调用 = 模型生成一次回复（含一轮工具调用）。🔧 表示调用了工具，⚡ 表示缓存失效重算。',
       colContext: '上下文',
       colCache: '缓存',
       colOutput: '输出',
       colTime: '耗时',
       colFresh: '新输入+输出',
+      colCost: '估算',
+      colWorkspace: '项目',
+      colConvs: '会话',
       noSteps: '暂无模型响应步骤',
       todayUtc8: '今日',
       last7d: '近 7 天',
       last30d: '近 30 天',
-      historyHint: '主数字 = 新输入 + 输出；缓存读取单独列出。日期按 UTC+8 划分。',
+      historyHint: '主数字 = 新输入 + 输出；金额为按公开 API 单价折算的等效参考值。日期按 UTC+8 划分。',
       dailyChart: '近 30 天 新输入+输出',
       byModel: '按模型汇总',
+      byWorkspace: '按项目汇总',
       colModel: '模型',
       colSteps: '调用',
       noteHooksActive: '计时说明：带工具的步骤按 transcript 时间戳计时，纯文本回复按 Hook 精确计时；速率是端到端观测值。',
@@ -79,19 +91,25 @@
         'low-output': '输出过少',
         outlier: '异常值',
       },
+      cacheBustReasons: {
+        'ttl-expired': '闲置超时（>5分钟），提示词缓存过期重算',
+        'model-switch': '切换模型导致缓存重算',
+        'prefix-invalidated': '上下文前缀变更，缓存未命中重算',
+      },
       timingSources: { transcript: '按 transcript 时间戳', hook: '按 Hook 计时', unavailable: '无计时' },
       days: '天',
       convs: '个会话',
-      activeDaysFmt: '活跃 {n} 天',
-      todaySubFmt: '输出 {out}\n缓存读取 {cache}',
-      convCountFmt: '{n} 个会话',
-      inferredModelsNote: '* 部分调用的模型是按当时的全局模型选择推断的。',
-      agentsNote: '子代理 / Swarm 会话的 transcript 不记录模型，单独归为一类。',
+      activeDaysFmt: '活跃 {n} 天\n≈ {cost}',
+      todaySubFmt: '输出 {out} · 缓存 {cache}\n≈ {cost}',
+      convCountFmt: '{n} 个会话\n≈ {cost}{saved}',
+      inferredModelsNote: '* 部分调用按全局模型选择或子代理继承关系推断；↳ 数字表示其中来自子代理 / Swarm 的调用数。',
+      agentsNote: '仅父会话已删除且无 Hook 记录的孤立子代理会归入“模型未记录”。',
     },
     en: {
       title: 'Context & TPS',
       refresh: 'Refresh',
       followCurrent: 'Current',
+      jumpConv: '↗ Open',
       tabLive: 'Live',
       tabSteps: 'Steps',
       tabHistory: '30d Usage',
@@ -118,6 +136,11 @@
       windowNote: 'Applies to {model} only. Pick "Auto" to go back to host window + compaction calibration.',
       windowNoteUnknown: 'Model not recognized: this applies to all unrecognized models.',
       autoPreset: 'Auto',
+      chatHintsLabel: 'In-chat hints (0 model tokens):',
+      pillToggleOn: '💬 Session pill · On',
+      pillToggleOff: '💬 Session pill · Off',
+      alertToggleOn: '🔔 85% alert · On',
+      alertToggleOff: '🔔 85% alert · Off',
       observedTps: 'Output speed',
       recentHint: 'Weighted over the last 5 valid steps',
       latestTps: 'Latest step',
@@ -129,21 +152,27 @@
       outputTokens: 'Output',
       cacheReads: 'Cache reads',
       plannerSteps: 'Model calls',
+      subagentsTotal: 'Subagents',
+      estApiCost: 'Est. API',
       tpsTrend: 'Speed trend (recent valid steps)',
       stepBreakdown: 'Model calls',
-      stepsHint: 'One model call = one model response (incl. one round of tool calls). 🔧 marks steps with tool calls.',
+      stepsHint: 'One model call = one model response (incl. one round of tool calls). 🔧 marks tool calls, ⚡ marks cache busts.',
       colContext: 'Context',
       colCache: 'Cache',
       colOutput: 'Out',
       colTime: 'Time',
       colFresh: 'Fresh in+out',
+      colCost: 'Est.',
+      colWorkspace: 'Workspace',
+      colConvs: 'Convs',
       noSteps: 'No model response steps yet',
       todayUtc8: 'Today',
       last7d: 'Last 7d',
       last30d: 'Last 30d',
-      historyHint: 'Main numbers = fresh input + output; cache reads listed separately. Days in UTC+8.',
+      historyHint: 'Main numbers = fresh input + output; USD values are reference API estimates. Days in UTC+8.',
       dailyChart: '30-day fresh input + output',
       byModel: 'By model',
+      byWorkspace: 'By workspace',
       colModel: 'Model',
       colSteps: 'Calls',
       noteHooksActive: 'Timing: tool steps use transcript timestamps, text-only replies use hook timings; speeds are end-to-end observations.',
@@ -167,25 +196,32 @@
         'low-output': 'low output',
         outlier: 'outlier',
       },
+      cacheBustReasons: {
+        'ttl-expired': 'Idle >5m: prompt cache TTL expired and recomputed',
+        'model-switch': 'Model switch caused prompt cache recomputation',
+        'prefix-invalidated': 'Prompt prefix changed; cache miss recomputation',
+      },
       timingSources: { transcript: 'transcript timestamps', hook: 'hook timing', unavailable: 'no timing' },
       days: 'days',
       convs: 'convs',
-      activeDaysFmt: '{n} active days',
-      todaySubFmt: 'out {out}\ncache {cache}',
-      convCountFmt: '{n} conversations',
-      inferredModelsNote: '* Some calls are attributed by inferring the global model selection at the time.',
-      agentsNote: 'Subagent / swarm transcripts do not record a model, so they are grouped separately.',
+      activeDaysFmt: '{n} active days\n≈ {cost}',
+      todaySubFmt: 'out {out} · cache {cache}\n≈ {cost}',
+      convCountFmt: '{n} convs\n≈ {cost}{saved}',
+      inferredModelsNote: '* Some calls are inferred from global selection or subagent inheritance; ↳ marks subagent / swarm calls.',
+      agentsNote: 'Only orphan subagents without parent spawn records or hook logs remain unattributed.',
     },
   };
 
   const AGENT_MODEL_LABEL = '__agents__';
+  const AUTO_FOLLOW_VAL = '__auto__';
+  const hostConvId = window.sidecar?.conversationId || '';
 
   const state = {
     locale: 'zh-CN',
     activeTab: 'live',
-    selectedConvId: '',
+    selectedConvId: hostConvId || AUTO_FOLLOW_VAL,
     userPinnedConv: false,
-    hostConvId: window.sidecar?.conversationId || '',
+    hostConvId,
     latestMetrics: null,
     pollTimer: null,
     convRefreshCounter: 0,
@@ -223,6 +259,14 @@
     if (abs >= 10_000) return `${(num / 1_000).toFixed(1)}K`;
     if (abs >= 1_000) return `${(num / 1_000).toFixed(2)}K`;
     return String(Math.round(num));
+  }
+
+  function formatUsd(amount) {
+    const val = Number(amount) || 0;
+    if (val <= 0) return '$0.00';
+    if (val < 0.01) return '<$0.01';
+    if (val < 10) return `$${val.toFixed(2)}`;
+    return `$${val.toFixed(1)}`;
   }
 
   function formatRelative(ms) {
@@ -370,8 +414,8 @@
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
     const describe = (day) => (isZh()
-      ? `${day.date}：新输入+输出 ${formatTokens(day.freshTokens)}（输出 ${formatTokens(day.outputTokens)}，缓存读取 ${formatTokens(day.cacheReadTokens)}，${day.steps} 次调用）`
-      : `${day.date}: fresh ${formatTokens(day.freshTokens)} (out ${formatTokens(day.outputTokens)}, cache ${formatTokens(day.cacheReadTokens)}, ${day.steps} calls)`);
+      ? `${day.date}：新输入+输出 ${formatTokens(day.freshTokens)}（输出 ${formatTokens(day.outputTokens)}，缓存读取 ${formatTokens(day.cacheReadTokens)}，${day.steps} 次调用，≈ ${formatUsd(day.estimatedCostUsd)}）`
+      : `${day.date}: fresh ${formatTokens(day.freshTokens)} (out ${formatTokens(day.outputTokens)}, cache ${formatTokens(day.cacheReadTokens)}, ${day.steps} calls, ≈ ${formatUsd(day.estimatedCostUsd)})`);
 
     daily.forEach((day, idx) => {
       const fresh = day.freshTokens || 0;
@@ -388,7 +432,7 @@
       rect.setAttribute('fill', fresh > 0 ? 'var(--accent)' : 'var(--line)');
       rect.setAttribute('opacity', fresh > 0 ? '0.88' : '0.45');
       rect.addEventListener('mouseenter', () => {
-        $('hist-hover-info').textContent = `${day.date}: ${formatTokens(fresh)}`;
+        $('hist-hover-info').textContent = `${day.date}: ${formatTokens(fresh)} · ≈ ${formatUsd(day.estimatedCostUsd)}`;
       });
       const title = document.createElementNS(svgNs, 'title');
       title.textContent = describe(day);
@@ -397,7 +441,7 @@
     });
 
     const latestDay = daily[daily.length - 1];
-    $('hist-hover-info').textContent = `${latestDay.date}: ${formatTokens(latestDay.freshTokens || 0)}`;
+    $('hist-hover-info').textContent = `${latestDay.date}: ${formatTokens(latestDay.freshTokens || 0)} · ≈ ${formatUsd(latestDay.estimatedCostUsd)}`;
     box.appendChild(svg);
   }
 
@@ -414,6 +458,7 @@
   function renderWindowSettings(data) {
     const model = data.model || {};
     const presets = data.capacityPresets || [];
+    const prefs = data.preferences || {};
     const overridden = Boolean(model.overridden);
     const activePreset = overridden ? model.preset : 'auto';
     const capLabel = formatTokens(model.capacityTokens || 0);
@@ -438,6 +483,18 @@
     $('window-settings-note').textContent = model.key && model.key !== 'unknown'
       ? fmt('windowNote', { model: model.matchedRule || model.name })
       : t('windowNoteUnknown');
+
+    const pillOn = prefs.sessionStartPill !== false;
+    const alertOn = prefs.inlineContextAlert !== false;
+    const pillBtn = $('toggle-session-pill');
+    const alertBtn = $('toggle-context-alert');
+    pillBtn.textContent = pillOn ? t('pillToggleOn') : t('pillToggleOff');
+    pillBtn.className = `preset-pill${pillOn ? ' active' : ''}`;
+    pillBtn.onclick = () => updatePreference({ sessionStartPill: !pillOn });
+
+    alertBtn.textContent = alertOn ? t('alertToggleOn') : t('alertToggleOff');
+    alertBtn.className = `preset-pill${alertOn ? ' active' : ''}`;
+    alertBtn.onclick = () => updatePreference({ inlineContextAlert: !alertOn });
   }
 
   function renderAlerts(data) {
@@ -459,6 +516,10 @@
       text = isZh()
         ? '刚完成压缩：当前显示的是摘要大小，下一次调用后刷新为实际用量。'
         : 'Just compacted: showing the summary size until the next call reports real usage.';
+    } else if (ctx.lastStepCacheBust) {
+      level = 'warn';
+      const reasons = t('cacheBustReasons');
+      text = `⚡ ${reasons[ctx.lastStepCacheBust] || ctx.lastStepCacheBust}`;
     }
 
     alert.textContent = text;
@@ -537,11 +598,18 @@
     }
 
     const followVisible = Boolean(
-      state.hostConvId && state.selectedConvId && state.hostConvId !== state.selectedConvId
+      state.hostConvId && state.selectedConvId && state.selectedConvId !== state.hostConvId
     );
     $('btn-follow-active').classList.toggle('hidden', !followVisible);
 
-    // Model + capacity source
+    const canJump = Boolean(
+      typeof window.sidecar?.ui?.toggleConversation === 'function' &&
+      data.conversationId &&
+      data.conversationId !== state.hostConvId
+    );
+    $('btn-jump-conv').classList.toggle('hidden', !canJump);
+
+    // Model + capacity source + workspace badge
     const model = data.model || {};
     const modelEl = $('model-name');
     if (!model.detected && data.conversationKind === 'agent') {
@@ -554,6 +622,15 @@
     const [srcKey, srcTitleKey] = SOURCE_KEYS[model.capacitySource] || SOURCE_KEYS.default;
     $('capacity-source').textContent = t(srcKey);
     $('capacity-source').title = t(srcTitleKey);
+
+    const wsBadge = $('workspace-badge');
+    if (data.workspace) {
+      wsBadge.textContent = `📁 ${data.workspace}`;
+      wsBadge.classList.remove('hidden');
+    } else {
+      wsBadge.textContent = '';
+      wsBadge.classList.add('hidden');
+    }
 
     // Context card
     const ctx = data.context || {};
@@ -600,12 +677,41 @@
     $('val-session-tps').textContent = fmtTps(tps.sessionTps);
     $('val-measured-steps').textContent = `${tps.measuredStepCount || 0} / ${data.sessionTotals?.plannerSteps || 0}`;
 
-    // Session usage card
+    // Session usage card + subagent rollup + cost
     const totals = data.sessionTotals || {};
     $('val-session-fresh').textContent = formatTokens((totals.uncachedInputTokens || 0) + (totals.outputTokens || 0));
     $('val-total-output').textContent = formatTokens(totals.outputTokens || 0);
     $('val-session-cache-read').textContent = formatTokens(totals.cacheReadTokens || 0);
     $('val-planner-steps').textContent = String(totals.plannerSteps || 0);
+
+    const sub = data.subagents || {};
+    const subRow = $('row-subagents');
+    if (sub.count > 0) {
+      subRow.classList.remove('hidden');
+      const valEl = $('val-subagents');
+      valEl.textContent = isZh()
+        ? `${sub.count} 个 · +${formatTokens(sub.freshTokens)}`
+        : `${sub.count} · +${formatTokens(sub.freshTokens)}`;
+      valEl.title = isZh()
+        ? `子代理共 ${sub.steps} 次调用，缓存读取 ${formatTokens(sub.cacheReadTokens)}，等效约 ${formatUsd(sub.estimatedCostUsd)}`
+        : `${sub.steps} subagent calls, cache ${formatTokens(sub.cacheReadTokens)}, ≈ ${formatUsd(sub.estimatedCostUsd)}`;
+    } else {
+      subRow.classList.add('hidden');
+    }
+
+    const cost = totals.cost || {};
+    const costEl = $('val-session-cost');
+    const savedUsd = Number(cost.cacheSavedUsd) || 0;
+    if (savedUsd >= 0.01) {
+      costEl.textContent = isZh()
+        ? `${formatUsd(cost.estimatedCostUsd)}（省 ${formatUsd(savedUsd)}）`
+        : `${formatUsd(cost.estimatedCostUsd)} (-${formatUsd(savedUsd)})`;
+    } else {
+      costEl.textContent = formatUsd(cost.estimatedCostUsd);
+    }
+    costEl.title = isZh()
+      ? `若无提示词缓存需约 ${formatUsd(cost.fullCostWithoutCacheUsd)}（节省 ${cost.cacheSavedPercent || 0}%）`
+      : `Without prompt caching: ≈ ${formatUsd(cost.fullCostWithoutCacheUsd)} (${cost.cacheSavedPercent || 0}% saved)`;
 
     $('telemetry-note').textContent = data.hooksActive ? t('noteHooksActive') : t('noteHooksInactive');
 
@@ -624,15 +730,23 @@
 
     const reasons = t('reasons');
     const sources = t('timingSources');
+    const bustReasons = t('cacheBustReasons');
     for (const step of list) {
       const tr = document.createElement('tr');
       const tpsCell = step.tpsEligible && step.tps !== null
         ? { text: step.tps.toFixed(1) }
         : { text: reasons[step.tpsExcludedReason] || '--', muted: true };
+      const cacheCell = step.cacheBust
+        ? {
+            text: `${step.cacheHitRate.toFixed(0)}% ⚡`,
+            warn: true,
+            title: bustReasons[step.cacheBustReason] || step.cacheBustReason || '',
+          }
+        : { text: `${step.cacheHitRate.toFixed(0)}%` };
       const cells = [
         { text: `#${step.stepIndex}${step.toolCount > 0 ? ` 🔧${step.toolCount > 1 ? step.toolCount : ''}` : ''}` },
         { text: formatTokens(step.contextTokens ?? step.promptTokens) },
-        { text: `${step.cacheHitRate.toFixed(0)}%` },
+        cacheCell,
         { text: formatTokens(step.outputTokens) },
         { text: step.elapsedSec !== null ? `${step.elapsedSec.toFixed(1)}s` : '--', title: sources[step.timingSource] || '' },
         tpsCell,
@@ -641,6 +755,7 @@
         const td = document.createElement('td');
         td.textContent = cell.text;
         if (cell.muted) td.className = 'muted';
+        if (cell.warn) td.className = 'warn-cell';
         if (cell.title) td.title = cell.title;
         tr.appendChild(td);
       }
@@ -656,43 +771,109 @@
     $('hist-today-sub').textContent = fmt('todaySubFmt', {
       out: formatTokens(totals.todayOutputTokens || 0),
       cache: formatTokens(totals.todayCacheReadTokens || 0),
+      cost: formatUsd(totals.todayCostUsd || 0),
     });
     $('hist-7d').textContent = formatTokens(totals.last7dFreshTokens || 0);
-    $('hist-7d-sub').textContent = fmt('activeDaysFmt', { n: totals.activeDays || 0 });
+    $('hist-7d-sub').textContent = fmt('activeDaysFmt', {
+      n: totals.activeDays || 0,
+      cost: formatUsd(totals.last7dCostUsd || 0),
+    });
     $('hist-30d').textContent = formatTokens(totals.last30dFreshTokens || 0);
-    $('hist-30d-sub').textContent = fmt('convCountFmt', { n: totals.userConversations ?? totals.conversations ?? 0 });
+    const saved30d = Number(totals.last30dCacheSavedUsd) || 0;
+    const savedSuffix = saved30d >= 0.01
+      ? (isZh() ? `（省 ${formatUsd(saved30d)}）` : ` (-${formatUsd(saved30d)})`)
+      : '';
+    $('hist-30d-sub').textContent = fmt('convCountFmt', {
+      n: totals.userConversations ?? totals.conversations ?? 0,
+      cost: formatUsd(totals.last30dCostUsd || 0),
+      saved: savedSuffix,
+    });
+
+    const surfaces = data.bySurface || [];
+    const surfNote = $('surfaces-note');
+    if (surfaces.length > 1 || (surfaces.length === 1 && surfaces[0].surface !== 'desktop')) {
+      const labelMap = { desktop: 'Desktop', ide: 'IDE', cli: 'CLI' };
+      const summary = surfaces
+        .map((s) => `${labelMap[s.surface] || s.surface} ${s.conversations} (${formatTokens(s.freshTokens)})`)
+        .join(' · ');
+      surfNote.textContent = isZh() ? `多端汇总：${summary}` : `Surfaces: ${summary}`;
+      surfNote.classList.remove('hidden');
+    } else {
+      surfNote.textContent = '';
+      surfNote.classList.add('hidden');
+    }
 
     renderDailyChart(data.daily || []);
 
     const tbody = $('models-tbody');
     tbody.textContent = '';
     let anyInferred = false;
-    let anyAgents = false;
+    let anyAgentBreakdown = false;
+    let anyUnattributedAgents = false;
     for (const row of data.byModel || []) {
       if (!row.steps) continue;
       const tr = document.createElement('tr');
       const inferred = row.inferredSteps > 0;
+      const hasAgentShare = row.model !== AGENT_MODEL_LABEL && (row.agentSteps || 0) > 0;
       anyInferred = anyInferred || inferred;
-      anyAgents = anyAgents || row.model === AGENT_MODEL_LABEL;
+      anyAgentBreakdown = anyAgentBreakdown || hasAgentShare;
+      anyUnattributedAgents = anyUnattributedAgents || row.model === AGENT_MODEL_LABEL;
+      const savedTitle = (row.cacheSavedUsd || 0) >= 0.01
+        ? (isZh() ? `缓存节省 ≈ ${formatUsd(row.cacheSavedUsd)}` : `Cache saved ≈ ${formatUsd(row.cacheSavedUsd)}`)
+        : '';
+      const stepsTitle = hasAgentShare
+        ? (isZh()
+          ? `主会话 ${row.steps - row.agentSteps} 次 + 子代理/Swarm ${row.agentSteps} 次（子代理新输入+输出 ${formatTokens(row.agentFreshTokens || 0)}）`
+          : `Main ${row.steps - row.agentSteps} + subagent/swarm ${row.agentSteps} (subagent fresh ${formatTokens(row.agentFreshTokens || 0)})`)
+        : '';
       const cells = [
-        `${displayModel(row.model)}${inferred ? ' *' : ''}`,
-        String(row.steps),
-        formatTokens(row.freshTokens ?? (row.inputTokens + row.outputTokens)),
-        formatTokens(row.outputTokens),
-        `${row.cacheHitRate.toFixed(0)}%`,
+        { text: `${displayModel(row.model)}${inferred ? ' *' : ''}` },
+        { text: hasAgentShare ? `${row.steps} (↳${row.agentSteps})` : String(row.steps), title: stepsTitle },
+        { text: formatTokens(row.freshTokens ?? (row.inputTokens + row.outputTokens)) },
+        { text: formatTokens(row.outputTokens) },
+        { text: `${row.cacheHitRate.toFixed(0)}%` },
+        { text: formatUsd(row.estimatedCostUsd), title: savedTitle },
       ];
-      for (const text of cells) {
+      for (const cell of cells) {
         const td = document.createElement('td');
-        td.textContent = text;
+        td.textContent = cell.text;
+        if (cell.title) td.title = cell.title;
         tr.appendChild(td);
       }
       tbody.appendChild(tr);
     }
     const notes = [];
-    if (anyInferred) notes.push(t('inferredModelsNote'));
-    if (anyAgents) notes.push(t('agentsNote'));
+    if (anyInferred || anyAgentBreakdown) notes.push(t('inferredModelsNote'));
+    if (anyUnattributedAgents) notes.push(t('agentsNote'));
     $('models-note').textContent = notes.join(' ');
     $('models-note').classList.toggle('hidden', notes.length === 0);
+
+    // Per-workspace card
+    const workspaces = data.byWorkspace || [];
+    const wsCard = $('workspace-card');
+    const wsTbody = $('workspaces-tbody');
+    wsTbody.textContent = '';
+    if (workspaces.length > 0) {
+      wsCard.classList.remove('hidden');
+      for (const ws of workspaces.slice(0, 20)) {
+        const tr = document.createElement('tr');
+        const cells = [
+          `📁 ${ws.workspace}`,
+          String(ws.userConversations || ws.conversations),
+          formatTokens(ws.freshTokens),
+          `${ws.cacheHitRate.toFixed(0)}%`,
+          formatUsd(ws.estimatedCostUsd),
+        ];
+        for (const text of cells) {
+          const td = document.createElement('td');
+          td.textContent = text;
+          tr.appendChild(td);
+        }
+        wsTbody.appendChild(tr);
+      }
+    } else {
+      wsCard.classList.add('hidden');
+    }
   }
 
   // ---------------------------------------------------------------- conversation picker
@@ -701,13 +882,15 @@
     const isHost = conv.conversationId === state.hostConvId;
     const shortId = conv.conversationId.slice(0, 8);
     const when = formatRelative(conv.updatedAtMs);
+    const modelShort = displayModel(conv.model).replace(/\s*\((?:XHigh|High|Medium|Low|Thinking)\)$/i, '');
     if (conv.kind === 'agent') {
       const root = conv.rootTitle ? `「${conv.rootTitle}」` : shortId;
-      return `${t('agentPrefix')} · ${root} · ${when}`;
+      const agentMod = conv.model && conv.model !== AGENT_MODEL_LABEL ? ` · ${modelShort}` : '';
+      return `${t('agentPrefix')} · ${root} · ${when}${agentMod}`;
     }
     const title = conv.title || shortId;
-    const modelShort = displayModel(conv.model).replace(/\s*\((?:XHigh|High|Medium|Low|Thinking)\)$/i, '');
-    return `${isHost ? '★ ' : ''}${title} · ${when} · ${modelShort} · ${formatTokens(conv.contextUsedTokens)}`;
+    const subBadge = conv.subagentCount > 0 ? ` · +${conv.subagentCount}↳` : '';
+    return `${isHost ? '★ ' : ''}${title} · ${when} · ${modelShort} · ${formatTokens(conv.contextUsedTokens)}${subBadge}`;
   }
 
   async function refreshConversations() {
@@ -716,22 +899,20 @@
       if (!res.ok) return;
       const data = await res.json();
       const select = $('conv-select');
-      const previous = state.selectedConvId || state.hostConvId;
+      const previous = state.selectedConvId || state.hostConvId || AUTO_FOLLOW_VAL;
       select.textContent = '';
 
-      if (!state.hostConvId) {
-        const autoOpt = document.createElement('option');
-        autoOpt.value = '';
-        autoOpt.textContent = t('autoFollow');
-        select.appendChild(autoOpt);
-      }
+      const autoOpt = document.createElement('option');
+      autoOpt.value = AUTO_FOLLOW_VAL;
+      autoOpt.textContent = t('autoFollow');
+      select.appendChild(autoOpt);
 
       const list = data.conversations || [];
       const mine = list.filter((c) => c.kind !== 'agent').slice(0, 40);
       const agents = list.filter((c) => c.kind === 'agent').slice(0, 20);
       // Make sure a pinned / host conversation stays selectable even if it is older.
       for (const id of [previous, state.hostConvId]) {
-        if (!id) continue;
+        if (!id || id === AUTO_FOLLOW_VAL) continue;
         const conv = list.find((c) => c.conversationId === id);
         if (conv && !mine.includes(conv) && !agents.includes(conv)) {
           (conv.kind === 'agent' ? agents : mine).push(conv);
@@ -753,8 +934,8 @@
       }
 
       if (!state.hostConvId && !state.userPinnedConv) {
-        state.selectedConvId = '';
-        select.value = '';
+        state.selectedConvId = AUTO_FOLLOW_VAL;
+        select.value = AUTO_FOLLOW_VAL;
       } else if (previous && [...select.options].some((o) => o.value === previous)) {
         select.value = previous;
       } else if (select.options.length > 0) {
@@ -770,8 +951,15 @@
 
   async function refreshMetrics() {
     try {
-      const targetId = state.selectedConvId || state.hostConvId;
-      const query = targetId ? `?conversationId=${encodeURIComponent(targetId)}` : '';
+      let query = '';
+      if (state.selectedConvId === AUTO_FOLLOW_VAL) {
+        query = '?conversationId=latest';
+      } else {
+        const targetId = state.selectedConvId || state.hostConvId;
+        if (targetId) {
+          query = `?conversationId=${encodeURIComponent(targetId)}`;
+        }
+      }
       const res = await apiFetch(`/api/metrics${query}`);
       if (!res.ok) return;
       renderMetrics(await res.json());
@@ -852,7 +1040,7 @@
 
   $('conv-select').addEventListener('change', (e) => {
     state.selectedConvId = e.target.value;
-    state.userPinnedConv = Boolean(e.target.value);
+    state.userPinnedConv = e.target.value !== AUTO_FOLLOW_VAL;
     refreshMetrics();
   });
 
@@ -865,6 +1053,13 @@
       select.value = state.hostConvId;
     }
     refreshMetrics();
+  });
+
+  $('btn-jump-conv').addEventListener('click', () => {
+    const targetId = state.latestMetrics?.conversationId;
+    if (targetId && typeof window.sidecar?.ui?.toggleConversation === 'function') {
+      window.sidecar.ui.toggleConversation(targetId);
+    }
   });
 
   $('btn-locale').addEventListener('click', () => {

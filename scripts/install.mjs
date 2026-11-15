@@ -70,9 +70,10 @@ function install() {
   mkdirSync(stageDir, { recursive: true });
 
   try {
-    const runtimeFiles = ['plugin.json', 'hooks.json', 'assets', 'hooks', 'sidecars'];
+    const runtimeFiles = ['plugin.json', 'hooks.json', 'assets', 'hooks', 'sidecars', 'skills'];
     for (const rel of runtimeFiles) {
       const src = join(SOURCE_ROOT, rel);
+      if (!existsSync(src)) continue;
       const dst = join(stageDir, rel);
       cpSync(src, dst, { recursive: true });
     }
@@ -145,6 +146,7 @@ function status() {
     version: installedManifest?.version ?? null,
     hooksPresent: existsSync(join(targetDir, 'hooks.json')),
     sidecarPresent: existsSync(join(targetDir, 'sidecars', 'dashboard', 'sidecar.json')),
+    skillsPresent: existsSync(join(targetDir, 'skills', 'context-monitor', 'SKILL.md')),
     runnerExecutable: existsSync(join(targetDir, 'hooks', 'run-hook.sh'))
       ? (statSync(join(targetDir, 'hooks', 'run-hook.sh')).mode & 0o111) !== 0
       : false,

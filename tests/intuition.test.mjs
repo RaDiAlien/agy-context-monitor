@@ -202,3 +202,111 @@ test('rollup separates subagents, infers unswitched user conversations, and neve
     rmSync(appData, { recursive: true, force: true });
   }
 });
+
+test('subagents and swarm workers break down into real models via hook timings, swarm.add, and invoke_subagent', () => {
+  const appData = mkdtempSync(join(tmpdir(), 'agy-agent-breakdown-'));
+  try {
+    const pluginData = join(appData, 'plugin_data', 'agy-context-monitor');
+    mkdirSync(join(pluginData, 'timings'), { recursive: true });
+    const mk = (id, rows) => {
+      const logs = join(appData, 'brain', id, '.system_generated', 'logs');
+      mkdirSync(logs, { recursive: true });
+      writeJsonl(join(logs, 'transcript.jsonl'), rows);
+    };
+
+    const parent = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const swarmWorker = 'bbbbbbbb-0000-4000-8000-000000000002';
+    const inheritSub = 'cccccccc-0000-4000-8000-000000000003';
+    const flashSub = 'dddddddd-0000-4000-8000-000000000004';
+    const hookedSub = 'eeeeeeee-0000-4000-8000-000000000005';
+
+    mk(parent, [
+      { step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', created_at: iso(0), content: switchMsg('Gemini 4 Hydrogen (XHigh)', 'Gemini 4 Argon (High)') },
+      {
+        step_index: 1,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        created_at: iso(5),
+        input_tokens: 1000,
+        cache_read_tokens: 0,
+        output_tokens: 100,
+        tool_calls: [
+          { name: 'swarm', args: { action: 'add', name: 'SECRET_WORKER_NAME', brief: 'SECRET_SWARM_BRIEF' } },
+          { name: 'invoke_subagent', args: { TypeName: '"self"', Role: '"SECRET_ROLE"', Prompt: '"SECRET_PROMPT"', Model: '"inherit"' } },
+          { name: 'invoke_subagent', args: { TypeName: '"browser"', Model: '"flash"' } },
+          { name: 'invoke_subagent', args: { TypeName: '"browser"', Model: '"pro"' } },
+        ],
+      },
+      {
+        step_index: 2,
+        source: 'MODEL',
+        type: 'GENERIC',
+        created_at: iso(6),
+        content: `Created At: ...\n{"status":"added","name":"SECRET_WORKER_NAME","model":"gemini-4-hydrogen-xhigh","model_display_name":"Gemini 4 Hydrogen (XHigh)","conversation_id":"${swarmWorker}"}`,
+      },
+      {
+        step_index: 3,
+        source: 'MODEL',
+        type: 'GENERIC',
+        created_at: iso(6),
+        content: `Created the following subagent:\n{\n  "conversationId": "${inheritSub}"\n}`,
+      },
+      {
+        step_index: 4,
+        source: 'MODEL',
+        type: 'GENERIC',
+        created_at: iso(6),
+        content: `Created the following subagent:\n{\n  "conversationId": "${flashSub}"\n}`,
+      },
+      {
+        step_index: 5,
+        source: 'MODEL',
+        type: 'GENERIC',
+        created_at: iso(6),
+        content: `Created the following subagent:\n{\n  "conversationId": "${hookedSub}"\n}`,
+      },
+    ]);
+
+    for (const [id, tok] of [[swarmWorker, 5000], [inheritSub, 2000], [flashSub, 3000], [hookedSub, 4000]]) {
+      mk(id, [
+        { step_index: 0, source: 'SYSTEM', type: 'SYSTEM_MESSAGE', created_at: iso(10), content: `[Message] sender=${parent} content=work` },
+        { step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', created_at: iso(12), input_tokens: tok, cache_read_tokens: 0, output_tokens: 100 },
+      ]);
+    }
+
+    // Hook runtime model overrides alias (`"pro"`) with exact runtime model
+    writeJsonl(join(pluginData, 'timings', `${hookedSub}.jsonl`), [
+      { ts: Date.parse(iso(11)), event: 'pre', model: 'claude-sonnet-5-5-high' },
+    ]);
+
+    const env = { ANTIGRAVITY_APP_DATA_DIR: appData, PLUGIN_DATA: pluginData };
+    clearTranscriptCaches();
+    const rollup = computeUsageRollup({ env, nowMs: Date.parse(iso(60)), persistCache: true });
+    const byId = Object.fromEntries(rollup.conversations.map((c) => [c.conversationId, c]));
+    const models = Object.fromEntries(rollup.byModel.map((m) => [m.model, m]));
+
+    assert.equal(byId[swarmWorker].model, 'Gemini 4 Hydrogen (XHigh)');
+    assert.equal(byId[swarmWorker].modelInferred, false);
+    assert.equal(byId[inheritSub].model, 'Gemini 4 Argon (High)');
+    assert.equal(byId[inheritSub].modelInferred, true);
+    assert.equal(byId[flashSub].model, 'Gemini 3.8 Flash');
+    assert.equal(byId[hookedSub].model, 'Claude Sonnet 5.5 (High)');
+    assert.equal(byId[hookedSub].modelInferred, false);
+
+    // Zero unattributed `__agents__`!
+    assert.equal(models[AGENT_MODEL_LABEL], undefined);
+    assert.equal(models['Gemini 4 Hydrogen (XHigh)'].agentSteps, 1);
+    assert.equal(models['Gemini 4 Argon (High)'].steps, 2); // 1 parent + 1 inherited subagent
+    assert.equal(models['Gemini 4 Argon (High)'].agentSteps, 1);
+    assert.equal(models['Gemini 3.8 Flash'].agentSteps, 1);
+    assert.equal(models['Claude Sonnet 5.5 (High)'].agentSteps, 1);
+
+    // Privacy invariant: no brief, prompt, role, or worker name written to usage-cache.json
+    const cacheJson = readFileSync(join(pluginData, 'usage-cache.json'), 'utf8');
+    for (const secret of ['SECRET_WORKER_NAME', 'SECRET_SWARM_BRIEF', 'SECRET_ROLE', 'SECRET_PROMPT']) {
+      assert.equal(cacheJson.includes(secret), false);
+    }
+  } finally {
+    rmSync(appData, { recursive: true, force: true });
+  }
+});

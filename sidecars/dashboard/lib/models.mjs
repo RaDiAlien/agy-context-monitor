@@ -217,6 +217,7 @@ export function isInternalWorkerModel(value) {
 
 const KNOWN_MODEL_IDS = new Map([
   ['gemini-pro-orchestrator', 'Orchestrator (Carbon)'],
+  ['gemini-3.8-flash-tiered', 'Gemini 3.8 Flash'],
 ]);
 
 /**
@@ -231,7 +232,7 @@ export function prettifyModelId(value) {
   if (KNOWN_MODEL_IDS.has(lower)) return KNOWN_MODEL_IDS.get(lower);
 
   const effortWords = new Set(['low', 'medium', 'high', 'xhigh', 'max', 'minimal', 'thinking']);
-  const parts = lower.split(/[-_]+/).filter(Boolean);
+  const parts = lower.split(/[-_]+/).filter((p) => p && p !== 'tiered');
   let effort = null;
   if (parts.length > 1 && effortWords.has(parts[parts.length - 1])) {
     effort = parts.pop();
@@ -261,6 +262,29 @@ export function prettifyModelId(value) {
   if (!effort) return base;
   const effortLabel = effort === 'xhigh' ? 'XHigh' : effort.charAt(0).toUpperCase() + effort.slice(1);
   return `${base} (${effortLabel})`;
+}
+
+/**
+ * Resolve `invoke_subagent` `Model` aliases (`inherit`, `flash`, `flash_lite`, `pro`) or explicit names.
+ */
+export function resolveSubagentModelAlias(modelSpec, parentModel = null) {
+  const raw = typeof modelSpec === 'string' ? modelSpec.trim().replace(/^"+|"+$/g, '').trim() : '';
+  const lower = raw.toLowerCase();
+  if (!lower || lower === 'inherit') {
+    const inherited = cleanModelName(parentModel);
+    return inherited ? { model: inherited, inferred: true } : { model: null, inferred: false };
+  }
+  if (lower === 'flash') {
+    return { model: 'Gemini 3.8 Flash', inferred: true };
+  }
+  if (lower === 'flash_lite' || lower === 'flash-lite') {
+    return { model: 'Gemini 3.8 Flash Lite', inferred: true };
+  }
+  if (lower === 'pro') {
+    return { model: 'Gemini 3.1 Pro', inferred: true };
+  }
+  const explicit = prettifyModelId(raw);
+  return explicit ? { model: explicit, inferred: false } : { model: null, inferred: false };
 }
 
 /**
@@ -355,5 +379,119 @@ export function resolveContextCapacity(
     matchedRule: rule?.canonical ?? null,
     providerCapacityTokens,
     providerCapacityLabel,
+  };
+}
+
+/**
+ * Reference public API pricing rules (USD per 1M tokens) for equivalent cost & cache-savings estimates.
+ */
+const MODEL_PRICING_RULES = [
+  {
+    pattern: /\bclaude\b.*\bopus\b.*\b(?:4\.[5-9]|5)\b|\b(?:4\.[5-9]|5[.-]\d)\b.*\bopus\b/i,
+    tier: 'Claude Opus',
+    inputPerM: 5.0,
+    cacheReadPerM: 0.5,
+    outputPerM: 25.0,
+  },
+  {
+    pattern: /\bclaude\b.*\bopus\b/i,
+    tier: 'Claude Opus (Legacy)',
+    inputPerM: 15.0,
+    cacheReadPerM: 1.5,
+    outputPerM: 75.0,
+  },
+  {
+    pattern: /\bclaude\b.*\bhaiku\b/i,
+    tier: 'Claude Haiku',
+    inputPerM: 1.0,
+    cacheReadPerM: 0.1,
+    outputPerM: 5.0,
+  },
+  {
+    pattern: /\bclaude\b/i,
+    tier: 'Claude Sonnet',
+    inputPerM: 3.0,
+    cacheReadPerM: 0.3,
+    outputPerM: 15.0,
+  },
+  {
+    pattern: /\bgemini\b.*\bflash\b|\bargon\b/i,
+    tier: 'Gemini Flash / Argon',
+    inputPerM: 0.3,
+    cacheReadPerM: 0.03,
+    outputPerM: 2.5,
+  },
+  {
+    pattern: /\borchestrator\b|\bcarbon\b|\bhydrogen\b|\bgemini\b/i,
+    tier: 'Gemini Pro / Frontier',
+    inputPerM: 2.0,
+    cacheReadPerM: 0.2,
+    outputPerM: 12.0,
+  },
+  {
+    pattern: /\bgpt[- ]?oss[- ]?120b\b/i,
+    tier: 'GPT-OSS 120B',
+    inputPerM: 0.15,
+    cacheReadPerM: 0.04,
+    outputPerM: 0.6,
+  },
+  {
+    pattern: /\bgpt\b|\b(?:o1|o3|o4(?:-mini)?)\b/i,
+    tier: 'OpenAI GPT / Reasoning',
+    inputPerM: 2.0,
+    cacheReadPerM: 0.5,
+    outputPerM: 8.0,
+  },
+];
+
+const DEFAULT_PRICING_RULE = Object.freeze({
+  tier: 'Standard Reference',
+  inputPerM: 2.0,
+  cacheReadPerM: 0.2,
+  outputPerM: 12.0,
+});
+
+export function resolveModelPricing(modelName) {
+  const cleaned = cleanModelName(modelName);
+  if (cleaned) {
+    for (const rule of MODEL_PRICING_RULES) {
+      if (rule.pattern.test(cleaned)) {
+        return rule;
+      }
+    }
+  }
+  return DEFAULT_PRICING_RULE;
+}
+
+/**
+ * Estimate equivalent API cost and prompt-cache savings in USD for a token tuple.
+ */
+export function estimateTokenCost(
+  modelName,
+  { uncachedInputTokens = 0, cacheReadTokens = 0, outputTokens = 0 } = {}
+) {
+  const rate = resolveModelPricing(modelName);
+  const uncached = Math.max(0, Number(uncachedInputTokens) || 0);
+  const cached = Math.max(0, Number(cacheReadTokens) || 0);
+  const out = Math.max(0, Number(outputTokens) || 0);
+
+  const estimatedCostUsd =
+    (uncached * rate.inputPerM + cached * rate.cacheReadPerM + out * rate.outputPerM) / 1_000_000;
+  const fullCostWithoutCacheUsd =
+    ((uncached + cached) * rate.inputPerM + out * rate.outputPerM) / 1_000_000;
+  const cacheSavedUsd = Math.max(0, fullCostWithoutCacheUsd - estimatedCostUsd);
+  const cacheSavedPercent = fullCostWithoutCacheUsd > 0
+    ? (cacheSavedUsd / fullCostWithoutCacheUsd) * 100
+    : 0;
+
+  return {
+    tier: rate.tier,
+    inputPerM: rate.inputPerM,
+    cacheReadPerM: rate.cacheReadPerM,
+    outputPerM: rate.outputPerM,
+    estimatedCostUsd,
+    fullCostWithoutCacheUsd,
+    cacheSavedUsd,
+    cacheSavedPercent,
   };
 }

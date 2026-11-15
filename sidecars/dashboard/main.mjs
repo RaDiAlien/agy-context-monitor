@@ -107,7 +107,8 @@ export function createDashboardService({ env = process.env } = {}) {
 
     getMetrics(query = {}) {
       let explicitConv = null;
-      if (query.conversationId !== undefined && query.conversationId !== '') {
+      const forceAutoFollow = query.autoFollow === '1' || query.conversationId === 'latest';
+      if (query.conversationId !== undefined && query.conversationId !== '' && query.conversationId !== 'latest') {
         if (!isValidConversationId(query.conversationId)) {
           return jsonReply(400, { error: 'invalid_conversation_id' });
         }
@@ -121,7 +122,10 @@ export function createDashboardService({ env = process.env } = {}) {
         : null;
       // Auto-follow prefers the newest user-started conversation over background subagents.
       const newestUserConv = rollup.conversations.find((c) => c.kind === 'user') ?? rollup.conversations[0];
-      const convId = explicitConv ?? envConv ?? newestUserConv?.conversationId ?? null;
+      const convId = explicitConv
+        ?? (forceAutoFollow
+          ? (newestUserConv?.conversationId ?? envConv ?? null)
+          : (envConv ?? newestUserConv?.conversationId ?? null));
 
       if (!convId) {
         const empty = computeConversationMetrics({
@@ -140,13 +144,33 @@ export function createDashboardService({ env = process.env } = {}) {
 
       const transcript = readConversationTranscript(resolveTranscriptPath(convId, env));
       const timings = readHookTimings(resolveTimingsPath(convId, env));
+      const convMeta = rollup.conversations.find((c) => c.conversationId === convId);
+      const subagentTree = rollup.subagentsByRoot?.[convId]
+        ? { ...rollup.subagentsByRoot[convId], rootConversationId: convId }
+        : (convMeta?.kind === 'agent'
+          ? {
+              rootConversationId: convMeta.rootConversationId ?? null,
+              parentConversationId: convMeta.parentId ?? transcript.parentId ?? null,
+            }
+          : null);
+
       const metrics = computeConversationMetrics({
         conversationId: convId,
         transcript,
         timings,
         capacityOverrides: prefs.capacityOverrides,
         calibration: rollup.calibration,
+        subagents: subagentTree,
+        fallbackModel: convMeta?.model
+          ? { name: convMeta.model, inferred: Boolean(convMeta.modelInferred), source: convMeta.modelSource }
+          : null,
       });
+      if (!metrics.workspace && convMeta?.workspace) {
+        metrics.workspace = convMeta.workspace;
+      }
+      if (!metrics.surface && convMeta?.surface) {
+        metrics.surface = convMeta.surface;
+      }
 
       return jsonReply(200, {
         ...metrics,
@@ -163,7 +187,7 @@ export function createDashboardService({ env = process.env } = {}) {
     },
 
     getHistory() {
-      const { conversations, calibration, ...rest } = computeUsageRollup({ env, persistCache: true });
+      const { conversations, calibration, subagentsByRoot, ...rest } = computeUsageRollup({ env, persistCache: true });
       return jsonReply(200, { ...rest, conversationCount: conversations.length });
     },
 

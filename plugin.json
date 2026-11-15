@@ -1,7 +1,7 @@
 {
   "name": "agy-context-monitor",
   "displayName": "AGY Context Monitor",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Real-time context window capacity, cache hit rate, observed output TPS, and 30-day usage telemetry inside Antigravity using official transcript, hook, and sidecar APIs.",
   "logo": "assets/logo.svg",
   "suggestedPrompts": [

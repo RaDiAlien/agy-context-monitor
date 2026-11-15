@@ -22,6 +22,7 @@
 
     <div class="conv-bar">
       <select id="conv-select" aria-label="Conversation"></select>
+      <button type="button" class="mini-btn hidden" id="btn-jump-conv" data-i18n="jumpConv">↗ 跳转</button>
       <button type="button" class="mini-btn hidden" id="btn-follow-active" data-i18n="followCurrent">回到当前</button>
     </div>
 
@@ -39,6 +40,7 @@
             <div class="model-wrap">
               <span class="model-name" id="model-name">--</span>
               <span class="badge" id="capacity-source">--</span>
+              <span class="badge hidden" id="workspace-badge"></span>
             </div>
             <span class="pct-readout" id="ctx-percent">0.0%</span>
           </div>
@@ -80,6 +82,13 @@
             <div class="settings-body">
               <div class="preset-pills" id="preset-pills"></div>
               <p class="hint-line" id="window-settings-note"></p>
+              <div class="settings-sub" id="hook-toggles">
+                <span class="mini-label" data-i18n="chatHintsLabel">会话内提示（0 模型 Token）：</span>
+                <div class="preset-pills">
+                  <button type="button" class="preset-pill" id="toggle-session-pill"></button>
+                  <button type="button" class="preset-pill" id="toggle-context-alert"></button>
+                </div>
+              </div>
             </div>
           </details>
         </article>
@@ -128,6 +137,14 @@
                 <span data-i18n="plannerSteps">模型调用</span>
                 <strong id="val-planner-steps">0</strong>
               </div>
+              <div class="kv hidden" id="row-subagents">
+                <span data-i18n="subagentsTotal">子代理汇总</span>
+                <strong id="val-subagents">--</strong>
+              </div>
+              <div class="kv" id="row-session-cost">
+                <span data-i18n="estApiCost">等效 API</span>
+                <strong id="val-session-cost">--</strong>
+              </div>
             </div>
           </article>
         </div>
@@ -149,7 +166,7 @@
             <span class="card-label" data-i18n="stepBreakdown">每次模型调用</span>
             <span class="badge" id="steps-count-badge">0</span>
           </div>
-          <p class="hint-line" data-i18n="stepsHint">一次模型调用 = 模型生成一次回复（含一轮工具调用）。🔧 表示该步调用了工具。</p>
+          <p class="hint-line" data-i18n="stepsHint">一次模型调用 = 模型生成一次回复（含一轮工具调用）。🔧 表示调用了工具，⚡ 表示缓存失效重算。</p>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
@@ -188,7 +205,8 @@
             <div class="muted small" id="hist-30d-sub">--</div>
           </article>
         </div>
-        <p class="hint-line" data-i18n="historyHint">主数字 = 新输入 + 输出；缓存读取单独列出。日期按 UTC+8 划分。</p>
+        <p class="hint-line" data-i18n="historyHint">主数字 = 新输入 + 输出；金额为按公开 API 单价折算的等效参考值。日期按 UTC+8 划分。</p>
+        <p class="hint-line hidden" id="surfaces-note"></p>
 
         <article class="card">
           <div class="card-head">
@@ -211,12 +229,33 @@
                   <th data-i18n="colFresh">新输入+输出</th>
                   <th data-i18n="colOutput">输出</th>
                   <th data-i18n="colCache">缓存</th>
+                  <th data-i18n="colCost">估算</th>
                 </tr>
               </thead>
               <tbody id="models-tbody"></tbody>
             </table>
           </div>
           <p class="hint-line hidden" id="models-note"></p>
+        </article>
+
+        <article class="card hidden" id="workspace-card">
+          <div class="card-head">
+            <span class="card-label" data-i18n="byWorkspace">按项目汇总</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="colWorkspace">项目</th>
+                  <th data-i18n="colConvs">会话</th>
+                  <th data-i18n="colFresh">新输入+输出</th>
+                  <th data-i18n="colCache">缓存</th>
+                  <th data-i18n="colCost">估算</th>
+                </tr>
+              </thead>
+              <tbody id="workspaces-tbody"></tbody>
+            </table>
+          </div>
         </article>
       </section>
     </main>

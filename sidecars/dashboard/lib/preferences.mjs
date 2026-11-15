@@ -9,6 +9,8 @@ const MAX_OVERRIDES = 32;
 export const DEFAULT_PREFERENCES = Object.freeze({
   locale: 'zh-CN',
   capacityOverrides: Object.freeze({}),
+  sessionStartPill: true,
+  inlineContextAlert: true,
 });
 
 function sanitizeOverrides(input) {
@@ -23,15 +25,22 @@ function sanitizeOverrides(input) {
 }
 
 /**
- * Preferences schema v2: window overrides are stored per model family (`capacityOverrides[modelKey]`)
- * instead of one global preset, so pinning Claude to 200K never affects Gemini sessions.
- * The legacy global `capacityPreset` field is dropped on read.
+ * Preferences schema v3:
+ * - `capacityOverrides[modelKey]`: per-model-family window overrides
+ * - `sessionStartPill`: inject a 0-token `user_markdown` panel pill at `SessionStart`
+ * - `inlineContextAlert`: inject a 0-token `user_markdown` warning once per compaction cycle at >=85%
  */
 export function sanitizePreferences(input) {
   const obj = input && typeof input === 'object' ? input : {};
   return {
     locale: VALID_LOCALES.has(obj.locale) ? obj.locale : DEFAULT_PREFERENCES.locale,
     capacityOverrides: sanitizeOverrides(obj.capacityOverrides),
+    sessionStartPill: typeof obj.sessionStartPill === 'boolean'
+      ? obj.sessionStartPill
+      : DEFAULT_PREFERENCES.sessionStartPill,
+    inlineContextAlert: typeof obj.inlineContextAlert === 'boolean'
+      ? obj.inlineContextAlert
+      : DEFAULT_PREFERENCES.inlineContextAlert,
   };
 }
 
@@ -49,8 +58,8 @@ export function readPreferences(env = process.env) {
 }
 
 /**
- * Apply a patch: `{ locale }` and/or `{ capacityOverride: { modelKey, preset } }`
- * (`preset: 'auto'` removes the override for that model).
+ * Apply a patch: `{ locale }`, `{ sessionStartPill }`, `{ inlineContextAlert }`,
+ * and/or `{ capacityOverride: { modelKey, preset } }` (`preset: 'auto'` removes the override).
  */
 export function writePreferences(patch, env = process.env) {
   const current = readPreferences(env);
@@ -58,6 +67,12 @@ export function writePreferences(patch, env = process.env) {
   const next = {
     locale: body.locale ?? current.locale,
     capacityOverrides: { ...current.capacityOverrides },
+    sessionStartPill: typeof body.sessionStartPill === 'boolean'
+      ? body.sessionStartPill
+      : current.sessionStartPill,
+    inlineContextAlert: typeof body.inlineContextAlert === 'boolean'
+      ? body.inlineContextAlert
+      : current.inlineContextAlert,
   };
 
   const override = body.capacityOverride;

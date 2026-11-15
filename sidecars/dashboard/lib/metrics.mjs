@@ -1,5 +1,6 @@
 import {
   cleanModelName,
+  estimateTokenCost,
   inferModelAtTime,
   isInternalWorkerModel,
   isValidPresetId,
@@ -18,6 +19,7 @@ const SPARKLINE_LIMIT = 24;
 const FORECAST_STEP_SAMPLES = 12;
 const FORECAST_TURN_SAMPLES = 5;
 const MIN_FORECAST_STEP_SAMPLES = 3;
+const CACHE_TTL_GAP_MS = 5 * 60 * 1000;
 
 function median(sorted) {
   if (sorted.length === 0) return 0;
@@ -97,7 +99,7 @@ function userFacingHookModel(raw) {
  * 2. User-facing hook model ids (internal worker ids are ignored), prettified for display.
  * 3. Global selection timeline at the conversation start (user conversations only).
  */
-function resolveDetectedModel(steps, transitions, windows, { kind, calibration }) {
+function resolveDetectedModel(steps, transitions, windows, { kind, calibration, fallbackModel }) {
   let transcriptModel = null;
   let transcriptTs = -1;
   for (const t of transitions) {
@@ -141,6 +143,12 @@ function resolveDetectedModel(steps, transitions, windows, { kind, calibration }
   if (hookModel) {
     return { name: hookModel, source: 'hook' };
   }
+  if (fallbackModel?.name && fallbackModel.name !== '__agents__') {
+    const cleanedFallback = cleanModelName(fallbackModel.name);
+    if (cleanedFallback) {
+      return { name: cleanedFallback, source: fallbackModel.inferred ? 'inferred' : (fallbackModel.source || 'swarm') };
+    }
+  }
   if (kind !== 'agent') {
     const firstTs = steps.find((s) => s.createdAtMs > 0)?.createdAtMs ?? 0;
     const inferred = cleanModelName(inferModelAtTime(calibration?.modelTimeline, firstTs))
@@ -162,6 +170,38 @@ function mean(values) {
 
 function medianOf(values) {
   return median([...values].sort((x, y) => x - y));
+}
+
+function roundUsd(value) {
+  return Number((Number(value) || 0).toFixed(4));
+}
+
+/**
+ * Flag abrupt prompt-cache drops between consecutive calls (excluding post-compaction resets).
+ */
+function annotateCacheBusts(plannerSteps, checkpointIdxs) {
+  let count = 0;
+  for (let i = 1; i < plannerSteps.length; i++) {
+    const prev = plannerSteps[i - 1];
+    const curr = plannerSteps[i];
+    if (crossesCheckpoint(prev.stepIndex, curr.stepIndex, checkpointIdxs)) continue;
+
+    const prevWarm = prev.cacheReadTokens >= 16_000 || (prev.promptTokens >= 20_000 && prev.cacheHitRate >= 0.5);
+    if (!prevWarm) continue;
+    if (curr.promptTokens < 16_000 || curr.uncachedInputTokens < 12_000) continue;
+    if (curr.cacheHitRate >= 0.25 || curr.cacheReadTokens >= prev.cacheReadTokens * 0.25) continue;
+
+    let reason = 'prefix-invalidated';
+    if (prev.model && curr.model && resolveModelKey(prev.model) !== resolveModelKey(curr.model)) {
+      reason = 'model-switch';
+    } else if (prev.createdAtMs > 0 && curr.createdAtMs > 0 && (curr.createdAtMs - prev.createdAtMs) >= CACHE_TTL_GAP_MS) {
+      reason = 'ttl-expired';
+    }
+    curr.cacheBust = true;
+    curr.cacheBustReason = reason;
+    count++;
+  }
+  return count;
 }
 
 /**
@@ -215,7 +255,7 @@ function forecastCompaction(plannerSteps, checkpointIdxs, remainingTokens) {
 }
 
 /**
- * Compute full context window, cache hit rate, timing, and TPS telemetry for a conversation.
+ * Compute full context window, cache hit rate, timing, cost, subagent tree, and TPS telemetry.
  */
 export function computeConversationMetrics({
   conversationId,
@@ -224,11 +264,17 @@ export function computeConversationMetrics({
   capacityPreset = 'auto',
   capacityOverrides = null,
   calibration = null,
+  subagents = null,
+  fallbackModel = null,
 }) {
   const steps = transcript?.steps ?? [];
   const transitions = transcript?.transitions ?? [];
   const windows = timings?.windows ?? [];
   const claimedWindows = new Set();
+
+  const checkpoints = transcript?.checkpoints ?? [];
+  const sessionCheckpoints = checkpoints.filter((c) => c.triggerTokens > 0 || c.stepIndex >= 0);
+  const checkpointIdxs = sessionCheckpoints.map((c) => c.stepIndex);
 
   const plannerSteps = [];
   let totalUncachedInputTokens = 0;
@@ -297,6 +343,8 @@ export function computeConversationMetrics({
       promptTokens,
       outputTokens: step.outputTokens,
       cacheHitRate,
+      cacheBust: false,
+      cacheBustReason: null,
       toolCount: step.toolCount,
       elapsedSec,
       timingSource,
@@ -311,6 +359,8 @@ export function computeConversationMetrics({
       latestPromptStep = row;
     }
   }
+
+  const cacheBustCount = annotateCacheBusts(plannerSteps, checkpointIdxs);
 
   // MAD outlier filtering against >= 1.5s baseline turns.
   const baselineValues = plannerSteps
@@ -349,12 +399,27 @@ export function computeConversationMetrics({
   const detected = resolveDetectedModel(steps, transitions, windows, {
     kind: conversationKind,
     calibration,
+    fallbackModel,
   });
   const detectedModel = detected.name;
   const modelKey = resolveModelKey(detectedModel);
 
-  const checkpoints = transcript?.checkpoints ?? [];
-  const sessionCheckpoints = checkpoints.filter((c) => c.triggerTokens > 0 || c.stepIndex >= 0);
+  let sumCostUsd = 0;
+  let sumFullCostUsd = 0;
+  for (const row of plannerSteps) {
+    const stepCost = estimateTokenCost(row.model ?? detectedModel, {
+      uncachedInputTokens: row.uncachedInputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      outputTokens: row.outputTokens,
+    });
+    sumCostUsd += stepCost.estimatedCostUsd;
+    sumFullCostUsd += stepCost.fullCostWithoutCacheUsd;
+  }
+  const sumCacheSavedUsd = Math.max(0, sumFullCostUsd - sumCostUsd);
+  const cacheSavedPercent = sumFullCostUsd > 0
+    ? Number(((sumCacheSavedUsd / sumFullCostUsd) * 100).toFixed(1))
+    : 0;
+
   const autoCheckpoints = sessionCheckpoints.filter((c) => !c.manual);
   const manualCheckpoints = sessionCheckpoints.filter((c) => c.manual);
   const lastCheckpoint = sessionCheckpoints.length > 0
@@ -431,7 +496,6 @@ export function computeConversationMetrics({
   const sessionCacheHitRate = totalPromptTokens > 0 ? totalCacheReadTokens / totalPromptTokens : 0;
 
   const overCapacity = contextUsedTokens > contextTotalTokens;
-  const checkpointIdxs = sessionCheckpoints.map((c) => c.stepIndex);
   const forecast = forecastCompaction(plannerSteps, checkpointIdxs, contextRemainingTokens);
 
   let healthLevel = 'normal';
@@ -441,12 +505,27 @@ export function computeConversationMetrics({
     healthLevel = 'warning';
   }
 
+  const normalizedSubagents = {
+    count: subagents?.count || 0,
+    steps: subagents?.steps || 0,
+    uncachedInputTokens: subagents?.uncachedInputTokens ?? subagents?.inputTokens ?? 0,
+    cacheReadTokens: subagents?.cacheReadTokens || 0,
+    outputTokens: subagents?.outputTokens || 0,
+    freshTokens: subagents?.freshTokens || 0,
+    totalTokens: subagents?.totalTokens || 0,
+    estimatedCostUsd: roundUsd(subagents?.estimatedCostUsd || 0),
+    rootConversationId: subagents?.rootConversationId ?? null,
+    parentConversationId: subagents?.parentConversationId ?? transcript?.parentId ?? null,
+  };
+
   return {
     conversationId,
     exists: Boolean(transcript?.exists),
     updatedAtMs: Math.max(transcript?.mtimeMs ?? 0, timings?.mtimeMs ?? 0),
     hooksActive: Boolean(timings?.exists && windows.length > 0),
     conversationKind,
+    workspace: timings?.workspace ?? null,
+    surface: timings?.surface ?? null,
     model: {
       name: detectedModel ?? 'Unknown',
       key: modelKey,
@@ -475,6 +554,7 @@ export function computeConversationMetrics({
       overCapacity,
       switchPending,
       justCompacted: postCheckpointEmpty,
+      lastStepCacheBust: postCheckpointEmpty ? null : (latestPromptStep?.cacheBustReason ?? null),
     },
     forecast,
     compaction: {
@@ -512,8 +592,16 @@ export function computeConversationMetrics({
       outputTokens: totalOutputTokens,
       totalTokens: totalPromptTokens + totalOutputTokens,
       cacheHitRate: Number((sessionCacheHitRate * 100).toFixed(2)),
+      cacheBustCount,
       activeStepStatus: latestPlannerStep?.status ?? null,
+      cost: {
+        estimatedCostUsd: roundUsd(sumCostUsd),
+        fullCostWithoutCacheUsd: roundUsd(sumFullCostUsd),
+        cacheSavedUsd: roundUsd(sumCacheSavedUsd),
+        cacheSavedPercent,
+      },
     },
+    subagents: normalizedSubagents,
     steps: plannerSteps.map(({ footprint, ...row }) => ({
       ...row,
       contextTokens: footprint,

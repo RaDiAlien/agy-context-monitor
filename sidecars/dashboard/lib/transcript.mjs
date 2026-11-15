@@ -1,5 +1,6 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
-import { cleanModelName, extractModelTransition } from './models.mjs';
+import { cleanModelName, extractModelTransition, prettifyModelId } from './models.mjs';
+import { GUID_RE, sanitizeWorkspaceName } from './paths.mjs';
 
 const MAX_CACHE_ENTRIES = 128;
 const transcriptCache = new Map();
@@ -27,17 +28,44 @@ function toInt(value) {
 
 const USER_REQUEST_RE = /<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/;
 const SENDER_RE = /\bsender=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i;
+const SUBAGENT_CONV_ID_RE = /"conversationId"\s*:\s*"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i;
 const TITLE_MAX_CHARS = 28;
 const HEADER_READ_BYTES = 64 * 1024;
 const headerCache = new Map();
+const VALID_SURFACES = new Set(['desktop', 'ide', 'cli']);
+
+function unquoteToolArg(raw) {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim().replace(/^"+|"+$/g, '').trim();
+  return trimmed || null;
+}
+
+function parseEmbeddedJsonObject(text) {
+  if (typeof text !== 'string' || !text) return null;
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  try {
+    const parsed = JSON.parse(text.slice(start, end + 1));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Conversations started by the user begin with `USER_INPUT`; subagent / swarm / scheduled
- * conversations begin with a `SYSTEM_MESSAGE` from their parent.
+ * conversations begin with a non-empty `SYSTEM_MESSAGE` from their parent.
+ * Leading empty `SYSTEM_MESSAGE` steps (e.g. 0-token `SessionStart` `user_markdown` pills) are ignored.
  */
-function classifyFirstStep(type, source) {
+function classifyFirstStep(type, source, content) {
   if (type === 'USER_INPUT' || source === 'USER_EXPLICIT') return 'user';
-  if (type === 'SYSTEM_MESSAGE' || source === 'SYSTEM') return 'agent';
+  if (type === 'SYSTEM_MESSAGE' || source === 'SYSTEM') {
+    if (typeof content !== 'string' || !content.trim()) {
+      return null;
+    }
+    return 'agent';
+  }
   return null;
 }
 
@@ -115,7 +143,7 @@ export function readConversationHeader(filePath) {
     const type = typeof obj?.type === 'string' ? obj.type : '';
     const source = typeof obj?.source === 'string' ? obj.source : '';
     if (header.kind === null) {
-      header.kind = classifyFirstStep(type, source);
+      header.kind = classifyFirstStep(type, source, obj?.content);
       if (header.kind === 'agent') {
         const sender = SENDER_RE.exec(typeof obj.content === 'string' ? obj.content : '');
         header.parentId = sender ? sender[1].toLowerCase() : null;
@@ -144,7 +172,17 @@ export function readConversationHeader(filePath) {
  */
 export function readConversationTranscript(filePath) {
   if (!filePath || !existsSync(filePath)) {
-    return { exists: false, mtimeMs: 0, size: 0, steps: [], transitions: [], checkpoints: [] };
+    return {
+      exists: false,
+      mtimeMs: 0,
+      size: 0,
+      kind: 'user',
+      parentId: null,
+      steps: [],
+      transitions: [],
+      checkpoints: [],
+      spawnedAgents: [],
+    };
   }
 
   const stats = statSync(filePath);
@@ -158,10 +196,15 @@ export function readConversationTranscript(filePath) {
   const steps = [];
   const transitions = [];
   const checkpoints = [];
+  const spawnByChildId = new Map();
+  const swarmRosterToId = new Map();
+  let pendingToolCalls = [];
+  let pendingGenericIdx = 0;
   let lastPlannerFootprint = 0;
   let pendingManualCompact = false;
   let turnIndex = 0;
   let kind = null;
+  let parentId = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -187,12 +230,18 @@ export function readConversationTranscript(filePath) {
     const toolCount = Array.isArray(obj.tool_calls) ? obj.tool_calls.length : 0;
 
     if (kind === null) {
-      kind = classifyFirstStep(type, source);
+      kind = classifyFirstStep(type, source, obj.content);
+      if (kind === 'agent') {
+        const sender = SENDER_RE.exec(typeof obj.content === 'string' ? obj.content : '');
+        parentId = sender ? sender[1].toLowerCase() : null;
+      }
     }
 
     const isUserTurn = type === 'USER_INPUT' || source === 'USER_EXPLICIT';
     if (isUserTurn) {
       turnIndex++;
+      pendingToolCalls = [];
+      pendingGenericIdx = 0;
       // Only a boolean is derived; the request text itself is never retained.
       pendingManualCompact = isManualCompactRequest(obj.content);
     }
@@ -212,9 +261,83 @@ export function readConversationTranscript(filePath) {
 
     if (type === 'PLANNER_RESPONSE') {
       pendingManualCompact = false;
+      pendingGenericIdx = 0;
+      if (
+        Array.isArray(obj.tool_calls) &&
+        obj.tool_calls.some((tc) => tc?.name === 'invoke_subagent' || tc?.name === 'swarm')
+      ) {
+        pendingToolCalls = obj.tool_calls.map((tc) => ({
+          name: typeof tc?.name === 'string' ? tc.name : '',
+          modelArg: unquoteToolArg(tc?.args?.Model ?? tc?.args?.model ?? tc?.arguments?.Model ?? tc?.arguments?.model),
+          stepIndex,
+          createdAtMs,
+        }));
+      } else {
+        pendingToolCalls = [];
+      }
       const footprint = inputTokens + cacheReadTokens + outputTokens;
       if (footprint > 0) {
         lastPlannerFootprint = footprint;
+      }
+    } else if (type === 'GENERIC' && source === 'MODEL' && pendingGenericIdx < pendingToolCalls.length) {
+      const tc = pendingToolCalls[pendingGenericIdx++];
+      const content = typeof obj.content === 'string' ? obj.content : '';
+      if (tc.name === 'invoke_subagent') {
+        const idMatch = SUBAGENT_CONV_ID_RE.exec(content);
+        if (idMatch) {
+          const childId = idMatch[1].toLowerCase();
+          spawnByChildId.set(childId, {
+            childId,
+            via: 'subagent',
+            model: null,
+            modelSpec: tc.modelArg || 'inherit',
+            stepIndex: tc.stepIndex,
+            ts: tc.createdAtMs || createdAtMs,
+            parentStepModel: null,
+          });
+        }
+      } else if (tc.name === 'swarm') {
+        const jObj = parseEmbeddedJsonObject(content);
+        if (jObj) {
+          const recordWorker = (entry) => {
+            const rawId = typeof entry?.conversation_id === 'string' ? entry.conversation_id.trim().toLowerCase() : '';
+            if (!GUID_RE.test(rawId)) return;
+            const resolvedModel = cleanModelName(entry.model_display_name) ?? prettifyModelId(entry.model);
+            if (typeof entry.name === 'string' && entry.name.trim()) {
+              swarmRosterToId.set(entry.name.trim(), rawId);
+            }
+            spawnByChildId.set(rawId, {
+              childId: rawId,
+              via: 'swarm',
+              model: resolvedModel,
+              modelSpec: tc.modelArg || null,
+              stepIndex: tc.stepIndex,
+              ts: tc.createdAtMs || createdAtMs,
+              parentStepModel: null,
+            });
+          };
+          recordWorker(jObj);
+          for (const arr of [jObj.workers, jObj.added]) {
+            if (Array.isArray(arr)) arr.forEach(recordWorker);
+          }
+          // Handle `swarm` `model` switches or `status` roster updates by worker name
+          const updateRosterModel = (entry) => {
+            if (!entry || typeof entry.name !== 'string') return;
+            const targetId = swarmRosterToId.get(entry.name.trim());
+            if (!targetId) return;
+            const nextModel = cleanModelName(entry.model_display_name) ?? prettifyModelId(entry.model);
+            const existing = spawnByChildId.get(targetId);
+            if (existing && nextModel) {
+              existing.model = nextModel;
+            }
+          };
+          if (!jObj.conversation_id && jObj.name) {
+            updateRosterModel(jObj);
+          }
+          if (Array.isArray(jObj.members)) {
+            jObj.members.forEach(updateRosterModel);
+          }
+        }
       }
     } else if (type === 'CHECKPOINT') {
       const cpPrompt = inputTokens + cacheReadTokens;
@@ -272,14 +395,21 @@ export function readConversationTranscript(filePath) {
     cp.model = stepModelByIdx.get(cp.stepIndex) ?? activeModel;
   }
 
+  const spawnedAgents = [...spawnByChildId.values()].map(({ stepIndex: spIdx, ...sp }) => ({
+    ...sp,
+    parentStepModel: stepModelByIdx.get(spIdx) ?? activeModel ?? null,
+  }));
+
   const parsed = {
     exists: true,
     mtimeMs: stats.mtimeMs,
     size: stats.size,
     kind: kind ?? 'user',
+    parentId,
     steps,
     transitions,
     checkpoints,
+    spawnedAgents,
   };
   setBoundedCache(transcriptCache, filePath, { mtimeMs: stats.mtimeMs, size: stats.size, parsed });
   return parsed;
@@ -287,10 +417,20 @@ export function readConversationTranscript(filePath) {
 
 /**
  * Parse hook timing JSONL records and pair `PreInvocation` -> `PostInvocation` / `Stop` windows.
+ * Also extracts sanitized workspace basename (`ws`), surface (`desktop` | `ide` | `cli`), and alert cycles.
  */
 export function readHookTimings(filePath) {
   if (!filePath || !existsSync(filePath)) {
-    return { exists: false, mtimeMs: 0, size: 0, events: [], windows: [] };
+    return {
+      exists: false,
+      mtimeMs: 0,
+      size: 0,
+      workspace: null,
+      surface: null,
+      alertedCycles: [],
+      events: [],
+      windows: [],
+    };
   }
 
   const stats = statSync(filePath);
@@ -302,12 +442,23 @@ export function readHookTimings(filePath) {
   const raw = readFileSync(filePath, 'utf8');
   const lines = raw.split('\n');
   const events = [];
+  let workspace = null;
+  let surface = null;
+  const alertedSet = new Set();
 
   for (const line of lines) {
     if (!line || !line.trim()) continue;
     try {
       const obj = JSON.parse(line);
       if (obj && typeof obj === 'object' && Number.isFinite(obj.ts) && typeof obj.event === 'string') {
+        const ws = sanitizeWorkspaceName(obj.ws);
+        if (ws) workspace = ws;
+        if (typeof obj.surface === 'string' && VALID_SURFACES.has(obj.surface)) {
+          surface = obj.surface;
+        }
+        if (obj.event === 'alert' && Number.isFinite(obj.cycle)) {
+          alertedSet.add(Math.trunc(obj.cycle));
+        }
         events.push({
           ts: obj.ts,
           event: obj.event,
@@ -316,6 +467,8 @@ export function readHookTimings(filePath) {
           exec: Number.isFinite(obj.exec) ? obj.exec : null,
           reason: typeof obj.reason === 'string' ? obj.reason : '',
           model: cleanModelName(obj.model),
+          ws,
+          surface: typeof obj.surface === 'string' && VALID_SURFACES.has(obj.surface) ? obj.surface : null,
         });
       }
     } catch {
@@ -328,6 +481,9 @@ export function readHookTimings(filePath) {
     exists: true,
     mtimeMs: stats.mtimeMs,
     size: stats.size,
+    workspace,
+    surface,
+    alertedCycles: [...alertedSet].sort((a, b) => a - b),
     events,
     windows,
   };
