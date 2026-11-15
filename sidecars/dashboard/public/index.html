@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AGY Context Monitor</title>
+  <link rel="icon" href="/logo.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="/logo.svg" alt="" class="brand-logo" width="20" height="20" />
+        <span class="brand-title" data-i18n="title">Context &amp; TPS</span>
+      </div>
+      <div class="topbar-actions">
+        <button type="button" class="icon-btn" id="btn-locale" title="Switch language">EN</button>
+        <button type="button" class="icon-btn" id="btn-refresh" data-i18n-title="refresh" title="Refresh">&#8635;</button>
+      </div>
+    </header>
+
+    <div class="conv-bar">
+      <select id="conv-select" aria-label="Conversation"></select>
+      <button type="button" class="mini-btn hidden" id="btn-follow-active" data-i18n="followCurrent">回到当前</button>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab active" data-tab="live" role="tab" aria-selected="true" data-i18n="tabLive">实时</button>
+      <button type="button" class="tab" data-tab="steps" role="tab" aria-selected="false" data-i18n="tabSteps">步骤</button>
+      <button type="button" class="tab" data-tab="history" role="tab" aria-selected="false" data-i18n="tabHistory">30天统计</button>
+    </nav>
+
+    <main class="content">
+      <!-- Tab 1: Live -->
+      <section id="panel-live" class="panel active">
+        <article class="card">
+          <div class="card-head">
+            <div class="model-wrap">
+              <span class="model-name" id="model-name">--</span>
+              <span class="badge" id="capacity-source">--</span>
+            </div>
+            <span class="pct-readout" id="ctx-percent">0.0%</span>
+          </div>
+
+          <div class="progress-track" aria-label="Context usage">
+            <div class="progress-cached" id="bar-cached"></div>
+            <div class="progress-uncached" id="bar-uncached"></div>
+            <div class="progress-output" id="bar-output"></div>
+          </div>
+
+          <div class="legend-row">
+            <span class="legend-item" data-i18n-title="cachedHint"><i class="swatch swatch-cached"></i><span data-i18n="cached">缓存</span> <strong id="val-cached">0</strong></span>
+            <span class="legend-item" data-i18n-title="uncachedHint"><i class="swatch swatch-uncached"></i><span data-i18n="uncached">新增</span> <strong id="val-uncached">0</strong></span>
+            <span class="legend-item" data-i18n-title="stepOutHint"><i class="swatch swatch-output"></i><span data-i18n="stepOut">本步输出</span> <strong id="val-step-out">0</strong></span>
+            <span class="legend-item muted legend-cap"><span data-i18n="capacity">上限</span> <strong id="val-capacity">0</strong><span class="spec hidden" id="val-provider-spec"></span></span>
+          </div>
+
+          <div class="alert hidden" id="ctx-alert"></div>
+          <div class="forecast hidden" id="forecast-line"></div>
+          <div class="compaction-banner hidden" id="compaction-banner"></div>
+
+          <div class="sub-metrics">
+            <div class="mini-stat">
+              <span class="mini-label" data-i18n="contextUsed">上下文已用</span>
+              <span class="mini-val" id="val-used">0</span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-label" data-i18n="remaining">距离压缩</span>
+              <span class="mini-val" id="val-remaining">0</span>
+            </div>
+            <div class="mini-stat">
+              <span class="mini-label" data-i18n="cacheHitRate">本步缓存命中</span>
+              <span class="mini-val" id="val-cache-hit">0%</span>
+            </div>
+          </div>
+
+          <details class="settings" id="window-settings">
+            <summary id="window-settings-summary">--</summary>
+            <div class="settings-body">
+              <div class="preset-pills" id="preset-pills"></div>
+              <p class="hint-line" id="window-settings-note"></p>
+            </div>
+          </details>
+        </article>
+
+        <div class="grid-2">
+          <article class="card">
+            <div class="card-label" data-i18n="observedTps">生成速率</div>
+            <div class="hero-num">
+              <span id="val-recent-tps">--</span>
+              <span class="unit">tok/s</span>
+            </div>
+            <div class="muted small" data-i18n="recentHint">近 5 个有效步的加权平均</div>
+            <div class="kv-list">
+              <div class="kv">
+                <span data-i18n="latestTps">最新一步</span>
+                <strong id="val-latest-tps">--</strong>
+              </div>
+              <div class="kv">
+                <span data-i18n="sessionTps">会话平均</span>
+                <strong id="val-session-tps">--</strong>
+              </div>
+              <div class="kv">
+                <span data-i18n="measuredSteps">有效采样</span>
+                <strong id="val-measured-steps">0 / 0</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="card-label" data-i18n="sessionTotals">本会话用量</div>
+            <div class="hero-num">
+              <span id="val-session-fresh">0</span>
+              <span class="unit" data-i18n="freshUnit">新输入+输出</span>
+            </div>
+            <div class="muted small" data-i18n="freshHint">不含缓存读取（缓存通常按折扣计费）</div>
+            <div class="kv-list">
+              <div class="kv">
+                <span data-i18n="outputTokens">输出</span>
+                <strong id="val-total-output">0</strong>
+              </div>
+              <div class="kv">
+                <span data-i18n="cacheReads">缓存读取</span>
+                <strong id="val-session-cache-read">0</strong>
+              </div>
+              <div class="kv">
+                <span data-i18n="plannerSteps">模型调用</span>
+                <strong id="val-planner-steps">0</strong>
+              </div>
+            </div>
+          </article>
+        </div>
+
+        <article class="card">
+          <div class="card-head">
+            <span class="card-label" data-i18n="tpsTrend">速率趋势（最近有效步）</span>
+            <span class="muted small" id="tps-range-label">--</span>
+          </div>
+          <div class="chart-box" id="tps-chart-box"></div>
+          <p class="hint-line" id="telemetry-note"></p>
+        </article>
+      </section>
+
+      <!-- Tab 2: Steps -->
+      <section id="panel-steps" class="panel">
+        <article class="card">
+          <div class="card-head">
+            <span class="card-label" data-i18n="stepBreakdown">每次模型调用</span>
+            <span class="badge" id="steps-count-badge">0</span>
+          </div>
+          <p class="hint-line" data-i18n="stepsHint">一次模型调用 = 模型生成一次回复（含一轮工具调用）。🔧 表示该步调用了工具。</p>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th data-i18n="colContext">上下文</th>
+                  <th data-i18n="colCache">缓存</th>
+                  <th data-i18n="colOutput">输出</th>
+                  <th data-i18n="colTime">耗时</th>
+                  <th>tok/s</th>
+                </tr>
+              </thead>
+              <tbody id="steps-tbody"></tbody>
+            </table>
+          </div>
+          <p class="empty-msg hidden" id="steps-empty" data-i18n="noSteps">暂无模型响应步骤</p>
+        </article>
+      </section>
+
+      <!-- Tab 3: History -->
+      <section id="panel-history" class="panel">
+        <div class="grid-3">
+          <article class="card compact">
+            <div class="card-label" data-i18n="todayUtc8">今日</div>
+            <div class="stat-num" id="hist-today">0</div>
+            <div class="muted small" id="hist-today-sub">--</div>
+          </article>
+          <article class="card compact">
+            <div class="card-label" data-i18n="last7d">近 7 天</div>
+            <div class="stat-num" id="hist-7d">0</div>
+            <div class="muted small" id="hist-7d-sub">--</div>
+          </article>
+          <article class="card compact">
+            <div class="card-label" data-i18n="last30d">近 30 天</div>
+            <div class="stat-num" id="hist-30d">0</div>
+            <div class="muted small" id="hist-30d-sub">--</div>
+          </article>
+        </div>
+        <p class="hint-line" data-i18n="historyHint">主数字 = 新输入 + 输出；缓存读取单独列出。日期按 UTC+8 划分。</p>
+
+        <article class="card">
+          <div class="card-head">
+            <span class="card-label" data-i18n="dailyChart">近 30 天 新输入+输出</span>
+            <span class="muted small" id="hist-hover-info">--</span>
+          </div>
+          <div class="chart-box" id="history-chart-box"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <span class="card-label" data-i18n="byModel">按模型汇总</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th data-i18n="colModel">模型</th>
+                  <th data-i18n="colSteps">调用</th>
+                  <th data-i18n="colFresh">新输入+输出</th>
+                  <th data-i18n="colOutput">输出</th>
+                  <th data-i18n="colCache">缓存</th>
+                </tr>
+              </thead>
+              <tbody id="models-tbody"></tbody>
+            </table>
+          </div>
+          <p class="hint-line hidden" id="models-note"></p>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="/preload.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

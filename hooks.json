@@ -1,0 +1,25 @@
+{
+  "context-monitor-timing": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "./hooks/run-hook.sh pre",
+        "timeout": 5
+      }
+    ],
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "./hooks/run-hook.sh post",
+        "timeout": 5
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "./hooks/run-hook.sh stop",
+        "timeout": 5
+      }
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "agy-context-monitor",
+  "version": "1.1.0",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RaDiAlien/agy-context-monitor.git"
+  },
+  "type": "module",
+  "description": "Maintainable context window and TPS monitor plugin for Google Antigravity 2.x",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node sidecars/dashboard/main.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "install-plugin": "node scripts/install.mjs install",
+    "uninstall-plugin": "node scripts/install.mjs uninstall",
+    "status": "node scripts/install.mjs status"
+  }
+}

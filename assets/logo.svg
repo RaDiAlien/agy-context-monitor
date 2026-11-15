@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="agy-arc" x1="20" y1="88" x2="108" y2="36" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="55%" stop-color="#0EA5E9" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+    <linearGradient id="agy-needle" x1="64" y1="74" x2="90" y2="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0EA5E9" />
+      <stop offset="100%" stop-color="#F59E0B" />
+    </linearGradient>
+  </defs>
+  <!-- Background track ring (~10% padding around outer frame) -->
+  <path
+    d="M 28.6 93.4 A 46 46 0 1 1 99.4 93.4"
+    stroke="#64748B"
+    stroke-opacity="0.32"
+    stroke-width="11"
+    stroke-linecap="round"
+  />
+  <!-- Active context gauge arc (~72% filled) -->
+  <path
+    d="M 28.6 93.4 A 46 46 0 1 1 94.2 31.2"
+    stroke="url(#agy-arc)"
+    stroke-width="11"
+    stroke-linecap="round"
+  />
+  <!-- Inner TPS sparkline bars -->
+  <rect x="40" y="88" width="7" height="14" rx="3.5" fill="#10B981" />
+  <rect x="52" y="80" width="7" height="22" rx="3.5" fill="#0EA5E9" />
+  <rect x="64" y="84" width="7" height="18" rx="3.5" fill="#6366F1" />
+  <rect x="76" y="75" width="7" height="27" rx="3.5" fill="#F59E0B" />
+  <!-- Speedometer needle & hub -->
+  <line x1="64" y1="66" x2="88" y2="42" stroke="url(#agy-needle)" stroke-width="6" stroke-linecap="round" />
+  <circle cx="64" cy="66" r="7" fill="#0EA5E9" stroke="#6366F1" stroke-width="2.5" />
+</svg>
